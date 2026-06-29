@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>機器人競賽正式評分系統</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --success: #16a34a;
+    --danger: #dc2626;
+    --bg: #f8fafc;
+    --card-bg: #ffffff;
+    --border: #e2e8f0;
+  }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background-color: var(--bg);
+    color: #1e293b;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    line-height: 1.5;
+  }
+  h1 { text-align: center; color: var(--primary); font-size: 1.8rem; }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    padding: 20px;
+    margin: 15px 0;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+  .flex-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  textarea {
+    width: 100%;
+    height: 80px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 1.2rem;
+    box-sizing: border-box;
+    font-family: monospace;
+  }
+  input[type="number"], select {
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 1rem;
+  }
+  button {
+    background-color: var(--primary);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  button:hover { background-color: #1d4ed8; }
+  .btn-success { background-color: var(--success); }
+  .btn-success:hover { background-color: #15803d; }
+  .big { font-size: 28px; font-weight: bold; color: var(--primary); }
+  .fail { color: var(--danger); }
+  .ok { color: var(--success); }
+  .highlight { background: #f1f5f9; padding: 10px; border-radius: 8px; font-size: 1.2rem; font-weight: bold; }
+  footer { text-align: center; color: #64748b; font-size: 0.85rem; margin-top: 20px; }
+</style>
+</head>
+<body>
+<h1>🤖 機器人競賽正式評分系統</h1>
+
+<div class="card">
+  <h3>⚙️ 題目設定</h3>
+  <div class="flex-row">
+    <label><input type="radio" name="mode" value="auto" checked> 🎲 自動抽題</label>
+    <label><input type="radio" name="mode" value="manual"> ✍️ 手動出題</label>
+  </div>
+  <div class="flex-row">
+    目標數字 <input id="targetIn" type="number" min="100" max="999" placeholder="100-999">
+    A <input id="aIn" type="number" min="0" max="9" style="width:60px" placeholder="0-9">
+    B <select id="bIn"><option>*</option><option>/</option></select>
+    C <select id="cIn"><option>+</option><option>-</option></select>
+    <button onclick="newQuestion()">產生題目</button>
+  </div>
+</div>
+
+<div class="card highlight">
+  <div>🎯 目標數字：<span id="target" style="color:var(--danger); font-size: 1.5rem;"></span></div>
+  <div>🍀 幸運方塊：A = <span id="A"></span> ｜ B = <span id="B"></span> ｜ C = <span id="C"></span></div>
+</div>
+
+<div class="card">
+  <h3>⏱️ 競賽計時</h3>
+  <div class="flex-row">
+    <span>30秒解題倒數：<span id="solve" class="big">30</span></span>
+    <button onclick="startSolve()">開始解題</button>
+    <button class="btn-success" onclick="finishSolve()">完成解題</button>
+    <span>耗時：<span id="elapsed" style="font-weight:bold;">0.0</span> 秒</span>
+  </div>
+  <hr style="border:0; border-top:1px solid var(--border); margin:15px 0;">
+  <div class="flex-row">
+    <span>3分鐘總競賽倒數：<span id="run" class="big">180</span></span>
+    <button onclick="startRun()">開始競賽</button>
+    <label><input type="checkbox" id="lockMode" checked> 時間到鎖定</label>
+  </div>
+</div>
+
+<div class="card">
+  <h3>⌨️ 解題區</h3>
+  <p style="margin-top:0; font-size:0.9rem; color:#64748b;">請輸入算式（需使用幸運方塊，數字/運算子不可重複）</p>
+  <textarea id="expr" placeholder="例如：(8+5)*9..."></textarea><br><br>
+  <button class="btn-success" style="width:100%; font-size: 1.2rem; padding: 12px;" onclick="judge()">🚀 正式評分</button>
+</div>
+
+<div class="card" id="result" style="font-size: 1.1rem; line-height:1.8;">
+  等待評分...
+</div>
+
+<footer>
+  本工具為單機版 HTML 網頁，無需連網，下載後即可於瀏覽器中直接開啟使用。
+</footer>
+
+<script>
+let target,A,B,C,solveStart=null,solveTimer=null,runTimer=null;
+
+function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
+function pick(a){return a[Math.floor(Math.random()*a.length)];}
+
+function newQuestion(){
+  let mode=document.querySelector('input[name=mode]:checked').value;
+  if(mode==="auto"){
+    target=rnd(100,999);
+    A=String(rnd(0,9));
+    B=pick(["*","/"]);
+    C=pick(["+","-"]);
+  }else{
+    target=parseInt(document.getElementById("targetIn").value);
+    A=document.getElementById("aIn").value;
+    B=document.getElementById("bIn").value;
+    C=document.getElementById("cIn").value;
+  }
+  target=Math.max(100,Math.min(999,target||100));
+  document.getElementById("target").textContent=target;
+  document.getElementById("A").textContent=A;
+  document.getElementById("B").textContent=B;
+  document.getElementById("C").textContent=C;
+  document.getElementById("expr").disabled=false;
+  document.getElementById("expr").value="";
+  document.getElementById("result").innerHTML="等待評分...";
+}
+
+function startSolve(){
+  clearInterval(solveTimer);
+  let t=30;
+  solveStart=Date.now();
+  document.getElementById("solve").textContent=t;
+  document.getElementById("elapsed").textContent="0.0";
+  solveTimer=setInterval(()=>{
+    t--;
+    document.getElementById("solve").textContent=t;
+    if(t<=0) clearInterval(solveTimer);
+  },1000);
+}
+
+function finishSolve(){
+  if(!solveStart) return;
+  document.getElementById("elapsed").textContent=((Date.now()-solveStart)/1000).toFixed(1);
+  clearInterval(solveTimer);
+}
+
+function startRun(){
+  clearInterval(runTimer);
+  let t=180;
+  document.getElementById("run").textContent=t;
+  runTimer=setInterval(()=>{
+    t--;
+    document.getElementById("run").textContent=t;
+    if(t<=0){
+       clearInterval(runTimer);
+       if(document.getElementById("lockMode").checked){
+          document.getElementById("expr").disabled=true;
+          alert("時間到！輸入框已鎖定。");
+       }
+    }
+  },1000);
+}
+
+function judge(){
+  let expr=document.getElementById("expr").value.replace(/\s+/g,'');
+  let e=[];
+  let resultBox = document.getElementById("result");
+
+  if(!expr){resultBox.innerHTML="<span class='fail'>請輸入算式</span>";return;}
+
+  if(!expr.includes(A)) e.push("未使用幸運數字 A = "+A);
+  if(!expr.includes(B)) e.push("未使用幸運運算子 B = "+B);
+  if(!expr.includes(C)) e.push("未使用幸運運算子 C = "+C);
+
+  for(let i=0;i<=9;i++){
+    let c=(expr.match(new RegExp(i,'g'))||[]).length;
+    if(c>1) e.push("數字方塊 "+i+" 重複使用");
+  }
+
+  ["+","-","*","/"].forEach(op=>{
+    let c=expr.split(op).length-1;
+    if(c>1) e.push("運算子 "+op+" 重複使用");
+  });
+
+  let lp=(expr.match(/\(/g)||[]).length;
+  let rp=(expr.match(/\)/g)||[]).length;
+  if(lp>1) e.push("左括號超過 1 個");
+  if(rp>1) e.push("右括號超過 1 個");
+  if(lp!==rp) e.push("括號未成對");
+
+  let nums=expr.match(/\d+/g)||[];
+  nums.forEach(n=>{
+    if(n.length>2) e.push("出現三位數 "+n);
+    if(n.length>1 && n.startsWith("0")) e.push("出現前導零數字 "+n);
+  });
+
+  if(/^[+\-*/]/.test(expr)) e.push("算式開頭不可為運算子");
+  if(/[+\-*/]$/.test(expr)) e.push("算式結尾不可為運算子");
+  if(/\/0(?!\d)/.test(expr)) e.push("除以 0");
+
+  let value;
+  try{
+    value=Function('"use strict";return ('+expr+')')();
+  }catch(err){
+    e.push("算式格式錯誤");
+  }
+
+  if(value!==undefined){
+    if(!isFinite(value) || isNaN(value)) e.push("計算結果無效");
+    if(value<0) e.push("結果為負數");
+  }
+
+  if(e.length){
+    resultBox.innerHTML="<h2 class='fail'>❌ 挑戰失敗（0分）</h2><ul style='color:var(--danger);'><li>"+e.join("</li><li>")+"</li></ul>";
+    return;
+  }
+
+  let blocks=expr.length;
+  let bonus=0;
+  if(blocks>=8) bonus=Math.min(45,(blocks-7)*5);
+
+  let error=Math.abs(target-value);
+  let base=Math.max(0,100-error);
+  let total=base+bonus;
+
+  resultBox.innerHTML=`
+  <h2 class='ok'>✅ 挑戰成功</h2>
+  <ul>
+    <li>計算結果：<b>${value}</b></li>
+    <li>誤差值：<b>${error}</b></li>
+    <li>基本分：<b>${base}</b></li>
+    <li>方塊數：<b>${blocks}</b>（加分：${bonus}）</li>
+    <li>解題耗時：<b>${document.getElementById("elapsed").textContent}</b> 秒</li>
+  </ul>
+  <hr>
+  <div class="big">🏆 總分：${total.toFixed(2)}</div>`;
+}
+
+newQuestion();
+</script>
+</body>
+</html>
